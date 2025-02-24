@@ -1,5 +1,4 @@
 name: ci
-
 on:
   push:
     branches:
@@ -7,55 +6,52 @@ on:
       - qa
     tags:
       - 'v*'  # Run on version tags like v1.0.0
-
 permissions:
   contents: "read"
   packages: "write"
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
       - name: Log in to GitHub container registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Extract Git Metadata
         id: meta
         run: |
+          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO_NAME_LOWER=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
             echo "DOCKER_TAG=$TAG_NAME" >> $GITHUB_ENV
             echo "PUSH_LATEST=true" >> $GITHUB_ENV
           else
-            echo "GIT_BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+            BRANCH_NAME=${GITHUB_REF#refs/heads/}
+            BRANCH_NAME=${BRANCH_NAME//\//-}  # Replace slashes with dashes for valid tag
+            echo "GIT_BRANCH=$BRANCH_NAME" >> $GITHUB_ENV
             echo "PUSH_LATEST=false" >> $GITHUB_ENV
           fi
-
-      - name: Build and push
+          echo "OWNER_LOWER=$OWNER_LOWER" >> $GITHUB_ENV
+          echo "REPO_NAME_LOWER=$REPO_NAME_LOWER" >> $GITHUB_ENV
+      - name: Build and push (Tagged release)
         uses: docker/build-push-action@v6
         if: env.PUSH_LATEST == 'true'
         with:
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: | 
-              ghcr.io/${{ suprit/cicd }}/${{ github.repository }}:${{ env.DOCKER_TAG }}
-              ghcr.io/${{ suprit/cicd }}/${{ github.repository }}:latest
-              
-      - name: Build and push
+          tags: |
+            ghcr.io/${{ env.OWNER_LOWER }}/${{ env.REPO_NAME_LOWER }}:${{ env.DOCKER_TAG }}
+            ghcr.io/${{ env.OWNER_LOWER }}/${{ env.REPO_NAME_LOWER }}:latest
+      - name: Build and push (Branch-based)
         uses: docker/build-push-action@v6
         if: env.PUSH_LATEST == 'false'
         with:
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: | 
-              ghcr.io/${{ suprit/cicd }}/${{ github.repository }}:${{ env.GIT_BRANCH }}
-
-
-              
+          tags: |
+            ghcr.io/${{ env.OWNER_LOWER }}/${{ env.REPO_NAME_LOWER }}:${{ env.GIT_BRANCH }}
